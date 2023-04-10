@@ -1,0 +1,143 @@
+from tkinter import *
+from tkinter import ttk
+import sqlite3
+from tkinter import messagebox
+import datetime
+
+con = sqlite3.connect("Library.db")
+cur = con.cursor()
+#TODO нельзя выдавать книгу индекс которой не совпадает с автором (убери выборку автора по книге)
+class GiveBook(Toplevel):
+    def __init__(self):
+        Toplevel.__init__(self)
+        self.geometry("650x750+550+220")
+        self.title("Дать Книгу")
+        self.resizable(False, False)
+
+        query2 = "SELECT * FROM Readers"
+        members = cur.execute(query2).fetchall()
+        member_list = []
+        for member in members:
+            member_list.append(str(member[0]) + " - " + member[1] + " " + member[2] + " " + member[3])
+
+
+        ################### Рамки #########################
+
+        # верхняя рамка
+        self.topFrame = Frame(self, height=150, bg='white')
+        self.topFrame.pack(fill=X)
+
+        # нижняя рамка
+        self.bottomFrame = Frame(self, height=600, bg='#fcc324')
+        self.bottomFrame.pack(fill=X)
+
+        # заголовок, изображение
+        self.top_image = PhotoImage(file='icons/add_member.png')
+        top_image_lbl = Label(self.topFrame, image=self.top_image, bg='white')
+        top_image_lbl.place(x=120, y=10)
+        heading = Label(self.topFrame, text='Дать Книгу', font='arial 22 bold', fg='#003f88', bg='white')
+        heading.place(x=290, y=60)
+
+        ######################### вводы и лейблы #########################
+        # книга
+        self.book_name = StringVar()
+        self.lbl_name = Label(self.bottomFrame, text="Название Книги: ", font='arial 15 bold', fg='white', bg='#fcc324')
+        self.lbl_name.place(x=40, y=40)
+        self.combo_name = ttk.Combobox(self.bottomFrame, textvariable = self.book_name, postcommand = self.findBookByAuthor)
+        self.combo_name.place(x = 210, y = 45)
+        # читатель
+        self.member_name = StringVar()
+        self.lbl_phone = Label(self.bottomFrame, text="№ читательского билета: ", font='arial 15 bold', fg='white', bg='#fcc324')
+        self.lbl_phone.place(x=40, y=80)
+        self.combo_member = ttk.Combobox(self.bottomFrame, textvariable=self.member_name)
+        self.combo_member['values'] = member_list
+        self.combo_member.place(x=210, y=85)
+        # автор
+        self.author_name = StringVar()
+        self.lbl_author = Label(self.bottomFrame, text="ФИО автора: ", font='arial 15 bold', fg='white', bg='#fcc324')
+        self.lbl_author.place(x=40, y=120)
+        self.combo_author = ttk.Combobox(self.bottomFrame, textvariable=self.author_name, postcommand = self.findAuthorByBook)
+        self.combo_author.place(x=210, y=125)
+
+
+        # кнопка
+        button = Button(self.bottomFrame, text='Дать Книгу', command = self.lendBook)
+        button.place(x=220, y=160)
+
+    def findBookByAuthor(self):
+        book_list = [""]
+        if self.author_name.get():
+            query = f"""SELECT * FROM Books WHERE author_id = {self.author_name.get()[0]}
+                       AND book_status = 0"""
+            books = cur.execute(query).fetchall()
+            for book in books:
+                book_list.append(str(book[0]) + " - " + book[1])
+
+        else:
+            query = "SELECT * FROM Books WHERE book_status = 0"
+            books = cur.execute(query).fetchall()
+            for book in books:
+                book_list.append(str(book[0]) + " - " + book[1])
+        self.combo_name['values'] = sorted(book_list, key=str.lower)
+    def findAuthorByBook(self):
+        authors_list = [""]
+        print(self.book_name.get())
+        if self.book_name.get():
+            query = f"""
+                    SELECT author_id FROM Books WHERE book_id = {self.book_name.get().split()[0]}
+                    """
+            author_id = cur.execute(query).fetchone()[0]
+            query2 = f"""
+                        SELECT * FROM Authors WHERE author_id = {author_id}
+                        """
+            author = cur.execute(query2).fetchone()
+            authors_list.append(str(author[0]) + " - " + author[1] + " " + author[3] + " " + author[2])
+        else:
+            query = "SELECT * FROM Authors"
+            authors = cur.execute(query).fetchall()
+            for author in authors:
+                authors_list.append(str(author[0]) + " - " + author[1] + " " + author[3] + " " + author[2])
+        self.combo_author['values'] = sorted(authors_list, key=str.lower)
+    def lendBook(self):
+        book_name = self.book_name.get()
+        self.book_id = book_name.split('-')[0]
+        self.reader_id = self.member_name.get()[0]
+        books_amount_query = f"""
+                            SELECT samples_amount FROM Books WHERE book_id = {self.book_id}
+                            """
+        taken_amount_query = f"""
+                                    SELECT taken_amount FROM Books WHERE
+                                    book_id = {self.book_id}
+                                    """
+        taken_amount = cur.execute(taken_amount_query).fetchone()[0]
+        samples_amount = cur.execute(books_amount_query).fetchone()[0]
+        if samples_amount-taken_amount <= 0:
+            messagebox.showerror("Ошибка", "В библиотеке тсутствуют экземпляры данной книги")
+        elif self.book_id and self.reader_id and self.author_name.get():
+            try:
+                # TODO убрать борроус, менять количество книг и, если потребуется статус книги, взаимодействовать с ишюанс(добавить айди читателя и книги, дату
+                #добавляем выдачу
+                query = f"""INSERT INTO Issuance (reader_id, book_id, lend_date) VALUES({self.reader_id},
+                        {self.book_id},'{str(datetime.date.today())}')"""
+                cur.execute(query)
+                #обновляем статус книги если это требуется
+                if samples_amount - (taken_amount+1) == 0:
+                    query3 = f"""
+                        UPDATE Books SET book_status = 1
+                        WHERE book_id = {self.book_id}
+                    """
+                    cur.execute(query3)
+                #обновляем количество взятых экземпляров
+                query4 = f"""
+                    UPDATE Books SET    
+                    taken_amount = {taken_amount+1}
+                    WHERE book_id = {self.book_id}
+                    """
+                cur.execute(query4)
+                messagebox.showinfo("Успешно!", "Успешно добавлено в Базу Данных!")
+                con.commit()
+            except Exception as e:
+                print(e)
+                messagebox.showerror("Ошибка", "Не получилось добавить в Базу Данных")
+        else:
+            messagebox.showerror("Ошибка", "Нельзя оставлять поля пустыми")
